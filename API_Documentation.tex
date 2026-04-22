@@ -1,0 +1,114 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    pdftitle={API Documentation},
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    backgroundcolor=\color{gray!10},
+    frame=single,
+    rulecolor=\color{black!30},
+    xleftmargin=10pt,
+    xrightmargin=10pt
+}
+
+\title{\textbf{Viniyog One: API Documentation}}
+\author{System Integration \& Security Specifications}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Overview}
+Viniyog One utilizes FastAPI to provide a robust, asynchronously capable RESTful API for executing Retrieval-Augmented Generation (RAG) processes. All endpoints are fortified behind a hierarchical Role-Based Access Control (RBAC) middleware ensuring strict banking security constraints.
+
+\section{Permission Hierarchy}
+All active endpoints require the \texttt{X-User-Role} HTTP header containing a valid system role.
+\begin{itemize}
+    \item \textbf{user:} Can execute standard retrieval queries.
+    \item \textbf{evaluator:} Authorized to execute extensive trace tools, diagnostic evaluations, and latency benchmarking.
+    \item \textbf{admin:} Full internal read access to system logs, monitoring paths, and ring-buffer retrieval states.
+    \item \textbf{system:} An isolated internal service role. It operates solely to mint and consume short-lived Knowledge Base fallback tokens.
+\end{itemize}
+
+\section{Core Endpoints}
+
+\subsection{1. \texttt{POST /query}}
+\textbf{Description:} Initiates a standard user query against the entire RAG pipeline. The return envelope encapsulates the LLM response alongside the exact snippet-level vector attributions.
+\begin{itemize}
+    \item \textbf{Required Role:} \texttt{user}
+    \item \textbf{Request Example:}
+\begin{lstlisting}[language=json]
+{
+  "query": "What is the PM Mudra Yojana eligibility?"
+}
+\end{lstlisting}
+    \item \textbf{Response Example (200 OK):}
+\begin{lstlisting}[language=json]
+{
+  "query": "What is the PM Mudra Yojana eligibility?",
+  "answer": "The PM Mudra Yojana provides loans to non-corporate...",
+  "sources": [
+    {
+      "content": "...relevant context snippet...",
+      "metadata": {"scheme_name": "PMMY"}
+    }
+  ]
+}
+\end{lstlisting}
+\end{itemize}
+
+\subsection{2. \texttt{POST /query/debug}}
+\textbf{Description:} Returns an unfiltered, verbose pipeline trace displaying internal chunking extraction metrics, similarity cosine scores, and pre/post-generation hallucination evaluations.
+\begin{itemize}
+    \item \textbf{Required Role:} \texttt{evaluator}
+\end{itemize}
+
+\subsection{3. \texttt{POST /evaluate}}
+\textbf{Description:} Accepts batched query arrays for pipeline testing. Output structures aggregate SLA constraints (e.g., Average Groundedness Scores, Hallucination and/or Fallback Threshold Rates, and total Latency overhead).
+\begin{itemize}
+    \item \textbf{Required Role:} \texttt{evaluator}
+\end{itemize}
+
+\section{Infrastructure Endpoints}
+
+\subsection{4. \texttt{GET /health}}
+\textbf{Description:} Unauthenticated public check. Responsible for polling sub-component capacities including vector stores, LLM endpoint availability, and SQLite mounts. Designed for Kubernetes liveness probes.
+\begin{itemize}
+    \item \textbf{Required Role:} None (Public)
+\end{itemize}
+
+\subsection{5. \texttt{GET /retrieval/logs}}
+\textbf{Description:} Outputs complete historical query logs including embedding similarity boundaries, and active fallback instances. Governed entirely by an internal ring-buffer cache.
+\begin{itemize}
+    \item \textbf{Required Role:} \texttt{admin}
+\end{itemize}
+
+\section{Internal Security Endpoints (Token-Gated)}
+
+\subsection{6. \texttt{POST /kb/token}}
+\textbf{Description:} Mints a specialized \texttt{HS256}-signed JSON Web Token specifically embedding \texttt{purpose: kb\_access} logic. Configured with a rigorous 1-minute TTL.
+\begin{itemize}
+    \item \textbf{Required Role:} \texttt{system}
+\end{itemize}
+
+\subsection{7. \texttt{POST /kb/fetch}}
+\textbf{Description:} High-security Knowledge Base fallback route. Triggers only when the initial LLM output violates the strict $0.85$ bounded hallucination constraint. Extracts verified strings natively from the FTS5 SQLite database.
+\begin{itemize}
+    \item \textbf{Required Role:} \texttt{system} (Mandates \texttt{Bearer token} extracted from \texttt{/kb/token})
+\end{itemize}
+
+\end{document}

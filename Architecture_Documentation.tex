@@ -1,0 +1,106 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    pdftitle={System Architecture Documentation},
+}
+
+\title{\textbf{Viniyog One: System Architecture Documentation}}
+\author{Architecture, Control Flow, and Pipeline Specifications}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{System Architecture}
+
+The Viniyog One Enterprise RAG system is a multi-stage architecture enforcing strict semantic grounding mechanisms specifically built for the banking paradigm. 
+
+\subsection{Core Components}
+\begin{itemize}
+    \item \textbf{FastAPI Gateway}: Asynchronous REST handler intercepting calls and applying Header-based RBAC constraints.
+    \item \textbf{Bi-Encoder Vector DB}: \texttt{BAAI/bge-large-en-v1.5} dense representation logic mounted over a locally persisting \texttt{ChromaDB}.
+    \item \textbf{Knowledge Base Fallback}: Authoritative, isolated SQLite Database with FTS5 keyword lookups. Token-gated to prevent unstructured data exfiltration.
+    \item \textbf{Generative Module}: Google Gemini 2.0 Flash leveraging structured JSON schemas for determinism.
+\end{itemize}
+
+\subsection{Architectural Flow}
+\begin{verbatim}
+[Client Request] ----> [FastAPI Gateway]
+                              |
+                     (RBAC Validation)
+                              |
+                    [ Router /query/ ] ----> [RAG Pipeline]
+                                                    |
+[ChromaDB Top-10] <---- (Retrieve) -----------------+
+       |
+[Cross-Encoder Top-3]
+       |
+[Gemini Structured Generation]
+       |
+       +----> (Groundedness >= 0.85) ----> [Format Output] ----> [User]
+       |
+       +----> (Groundedness < 0.85) ----> [KB Fallback Mint]
+                                                  |
+                                          [SQLite FTS5 DB]
+                                                  |
+                                          [Format Output] ----> [User]
+\end{verbatim}
+
+\section{Data Flow Explanation}
+The foundational data flow adheres strictly to: \textbf{The LLM is NOT the source of truth.} All generation is contextualized against dynamic injection.
+
+\begin{itemize}
+    \item \textbf{Data Origin}: Source definitions originate in robust structures (\texttt{banking\_schemes.json} or \texttt{.csv}). The Ingestion layer (\texttt{ingestion\_service.py}) transforms tabular schemas natively into descriptive prose (e.g., converting ``7.5\% Return'' to ``Interest rate is 7.5\% per annum'') optimized for MTEB representation.
+    \item \textbf{Query Time Operation}: Vector distances mapped dynamically. Bi-encoders retrieve a broad Top-10 span which prevents data loss on edge-terminology logic. Then heavy lifting cross-encoder evaluation reranks the final contexts. Finally, constraints map exact attributions to the LLM generation block via XML styling bounds \texttt{<source id="X">}.
+\end{itemize}
+
+\section{Chunking Strategy Justification}
+The BRD strictly requested evaluation between sliding/fixed/semantic operations. We bypassed arbitrary limits in favor of complex \textbf{Semantic Chunking}.
+
+\begin{itemize}
+    \item \textbf{Why}: Traditional Fixed-Window tokens arbitrarily split sentences down the middle.
+    \item \textbf{Methodology}: Our engine leverages sliding baseline calculations over continuous cosine similarity changes. Boundary changes below 0.8 automatically split chunks preserving localized structural semantic alignment. Post-processing restricts the ultimate context footprint purely into a \texttt{256 - 512} token limit matching native banking layout documents.
+\end{itemize}
+
+\section{Retrieval Design Decisions}
+A wide-to-narrow mechanism controls precision drops common to basic models.
+\begin{itemize}
+    \item At \texttt{Top-K = 10}, ChromaDB achieves maximal \textbf{Recall}, netting related edge domains.
+    \item We augment pure retrieval via \texttt{cross-encoder/ms-marco-MiniLM-L-6-v2}. This model processes queries and passages contiguously to evaluate cross-attention (as opposed to dual dense representation independent mapping).
+    \item This distills the Top-10 down to a heavily scrutinized isolated \textbf{Top-3} eliminating noise before GenAi computation, lowering hallucination risks.
+\end{itemize}
+
+\section{Hallucination Detection Logic}
+Rather than the multi-step delayed calls characterizing legacy validation systems, Viniyog operates \textbf{Single-Pass Evaluative RAG}.
+
+\begin{itemize}
+    \item Gemini is forced to generate a \texttt{Pydantic GroundedResponse}.
+    \item Rather than generate simple prose, the structure must emit the generated answer \textit{AND} atomistically evaluate its component facts via \texttt{self\_evaluated\_groundedness}.
+    \item Combined with localized heuristic validations (entity tracking and numerical overlap validations), scores compute synchronously. Any output failing a strict \texttt{0.85} limitation is caught and discarded gracefully. False positives fall back to authoritative DB endpoints reliably avoiding hallucination damage completely.
+\end{itemize}
+
+\section{KB Token Mechanism}
+Token-layer restrictions operate based on \texttt{JWT (HS256)} lifecycle mechanics.
+\begin{itemize}
+    \item A failed LLM hallucination boundary triggers the system infrastructure account to POST \texttt{/kb/token}. This issues a stateless token restricted explicitly to generating payloads on \texttt{/kb/fetch}.
+    \item Tokens expire in 60s, completely isolating the source-of-truth banking SQLite database from being dumped improperly by untethered or external agents attempting to scrape backend APIs.
+\end{itemize}
+
+\section{Limitations and Trade-offs}
+\begin{itemize}
+    \item \textbf{In-Memory Volatility}: To adhere to immediate testability for the assessment, the ring buffer for \texttt{/retrieval/logs} operates ephemerally in-memory. Standard production runs mandate a Redis drop-in.
+    \item \textbf{SQLite Concurrency constraints}: By building an embeddable architecture directly serving \texttt{.db} assets we ensure universal code distribution, but production scale multi-write mechanics would require native DB adaptations \texttt{(i.e., PostgreSQL)}.
+\end{itemize}
+
+\end{document}
