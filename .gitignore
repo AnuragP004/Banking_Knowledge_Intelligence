@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.env
+data/vector_store/
+data/knowledge_base.db
+logs/
+server.log
+.DS_Store
+*.sqlite
+*.sqlite3
+.pytest_cache/

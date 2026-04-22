@@ -1,0 +1,45 @@
+# ==============================================================================
+# Viniyog One — Enterprise RAG for Banking Knowledge Intelligence
+# ==============================================================================
+# Requirements (Python 3.10+)
+#
+# Install: pip install -r requirements.txt
+#
+# NOTE: torch will be installed automatically with sentence-transformers.
+#       For CPU-only environments, install torch first:
+#       pip install torch --index-url https://download.pytorch.org/whl/cpu
+# ==============================================================================
+
+# --- Core API Framework ---
+fastapi==0.136.0             # Async API with auto-docs, dependency injection
+uvicorn==0.45.0              # ASGI server for production
+pydantic==2.13.3             # Data validation & schema definitions
+pydantic-settings>=2.0       # Environment-based configuration
+
+# --- Authentication & Security ---
+python-jose[cryptography]==3.5.0    # JWT token generation/validation (HS256)
+python-multipart==0.0.26             # Form data parsing for FastAPI
+
+# --- Logging & Observability ---
+loguru==0.7.3                # Structured logging with rotation
+
+# --- ML & Embeddings ---
+sentence-transformers==5.4.1  # BAAI/bge-large-en-v1.5 embedding model
+# torch auto-installed via sentence-transformers
+
+# --- Vector Store ---
+chromadb==1.5.8              # Persistent vector store with metadata filtering
+
+# --- LLM Integration ---
+google-genai==0.3.0   # Google Gemini API (gemini-2.0-flash)
+tiktoken==0.12.0             # Token counting for prompt management
+
+# --- Document Ingestion ---
+pypdf==6.10.2                # PDF text extraction
+python-docx==1.2.0           # DOCX document parsing
+beautifulsoup4==4.14.3       # HTML document parsing
+
+# --- Scientific Computing (transitive, pinned for reproducibility) ---
+numpy==2.4.4
+scipy==1.17.1
+scikit-learn==1.8.0
