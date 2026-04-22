@@ -1,0 +1,143 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{listings}
+\usepackage{array}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=blue,
+    pdftitle={Enterprise RAG Documentation},
+}
+
+\title{\textbf{Viniyog One: Enterprise-Grade Retrieval-Augmented Generation for Banking Knowledge Intelligence}}
+\author{Architecture \& Compliance Documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+The purpose of this document is to detail the design, architecture, and implementation of the Viniyog One Enterprise RAG system. The system strictly adheres to the core requirement: \textbf{The Knowledge Base is the source of truth, not the LLM.} It enforces strict hallucination evaluation and fallback mechanisms engineered for the sensitive banking domain.
+
+\section{System Architecture}
+
+The system embraces a multi-stage architecture enforcing strict semantic grounding mechanisms. 
+
+\begin{verbatim}
++-------------------------------------------------------------------------+
+|                          CLIENT REQUEST                                 |
+|                     (X-User-Role: user/evaluator)                       |
++------------------------------+------------------------------------------+
+                               |
+                               v
++-------------------------------------------------------------------------+
+|                       FastAPI Gateway                                   |
+|  +-------------------------------------------------------------------+  |
+|  | RBAC Middleware (Header-based role enforcement)                   |  |
+|  +-------------------------------------------------------------------+  |
+|                                                                         |
+|        [ /query ]    [ /evaluate ]    [ /health ]   [ /chunks/inspect ] |
+|            |                                                            |
+|            v                                                            |
+|   +---------------------------------------------------------------+     |
+|   |                  RAG Pipeline Service                         |     |
+|   |  +------------+   +--------------+   +-------------------+    |     |
+|   |  | RETRIEVE   |-->|  GENERATE    |-->| HALLUCINATION     |    |     |
+|   |  | (BGE+Chroma)   | (Gemini 2.0) |   | SELF-EVALUATION   |    |     |
+|   |  +------------+   +--------------+   +---------+---------+    |     |
+|   |                                                |              |     |
+|   |                            +-------------------+              |     |
+|   |                         Score >= 0.85     Score < 0.85        |     |
+|   |                            |                   |              |     |
+|   |                            v                   v              |     |
+|   |                      +----------+      +---------------+      |     |
+|   |                      | RESPOND  |      | KB FALLBACK   |      |     |
+|   |                      +----------+      +---------------+      |     |
+|   +---------------------------------------------------------------+     |
++-------------------------------------------------------------------------+
+\end{verbatim}
+
+\section{Data Flow Explanation}
+The data flow strictly enforces that all LLM interactions are contextualized against dynamically injected verified datasets.
+\begin{itemize}
+    \item \textbf{Ingestion:} Source definitions originate from JSON or tabular (CSV) schemas. The system parses and converts tabular matrices natively into descriptive prose (e.g., converting "Rate: 7.5\%" to "Interest rate is 7.5\% per annum") to prevent performance degradation with dense-retriever models.
+    \item \textbf{Query-Time:} A user's query is vectorized. A broad vector fetch pulls the Top-10 overlapping chunks. 
+    \item \textbf{Reranking:} Heavy-lifting cross-encoder models process the passages contiguously against the query and distill to an exact Top-3.
+    \item \textbf{Generation:} Context is injected along with `<source id="X">` XML mapping logic. The LLM executes a Single-Pass Structured evaluation.
+\end{itemize}
+
+\section{Chunking Strategy Justification}
+Rather than arbitrary token slices, the repository bypasses legacy windows in favor of \textbf{Semantic Chunking}.
+\begin{itemize}
+    \item \textbf{Why fixed-size fails:} Traditional windows arbitrarily split data mid-sentence causing information destruction (e.g., separating an eligibility bullet from the targeted demographic).
+    \item \textbf{Methodology:} Our engine embeds contiguous portions of sentences into temporary vectors. Cosine similarity boundaries are compared between sequential sentences. Shifts falling beneath `0.8` trigger a semantic split, thereby retaining localized structural meaning.
+    \item \textbf{Sizing Limitations:} The finalized semantically accurate arrays are constrained to sizes of $256 - 512$ tokens utilizing a 50-token overlap, guaranteeing that data cleanly maps to banking sections (Eligibility, Rates, Benefits).
+\end{itemize}
+
+\section{Retrieval Design Decisions}
+A wide-to-narrow mechanism controls precision drops.
+\begin{itemize}
+    \item \textbf{Broad Retrieval (Recall):} At `Top-K = 10`, ChromaDB backed by `BAAI/bge-large-en-v1.5` retrieves any loosely matching semantic domain data. This prevents silent data omissions on edge queries.
+    \item \textbf{Cross-Encoder (Precision):} To solve bi-encoder limitations, a `ms-marco-MiniLM-L-6-v2` cross-encoder physically scores the alignment between the query directly adjacent to the context, culling the initial net into a targeted `Top-3`. Irrelevant nodes falling below `0.65` similarities are actively dropped.
+\end{itemize}
+
+\section{Hallucination Detection Logic}
+Viniyog utilizes a highly tuned \textbf{Single-Pass Evaluative mechanism}. 
+\begin{itemize}
+    \item \textbf{Structured Constraints:} The Gemini 2.0 Flash generation call is bounded by a strict Pydantic JSON Schema (`GroundedResponse`). 
+    \item \textbf{Synchronous Grading:} Upon generating the prose answer, the model is architecturally forced to atomistically grade its own output (\textit{claims\_total}, \textit{claims\_supported}, and \textit{groundedness\_score} scaling 0.0-1.0).
+    \item \textbf{Fallback Boundary:} The absolute floor for validation is fixed at $0.85$. If a query evaluates beneath 0.85, it is destroyed before transmission to the user, and the KB fallback loop initiates securely. False positives fail safely into FTS5 keyword DB boundaries.
+\end{itemize}
+
+\section{KB Token Mechanism}
+Knowledge Base mechanics are segregated behind transient internal tokens to satisfy banking segregation parameters.
+\begin{itemize}
+    \item \textbf{Flow Control:} During a hallucination failure, the backend infrastructure identity contacts `/kb/token`. It executes a minting request creating an HS256-signed JSON Web Token specifically embedding `purpose: kb_access` claims.
+    \item \textbf{Temporal Lifespan:} The token expires in precisely 60 seconds.
+    \item \textbf{System Fetch:} The JWT is transferred to the `/kb/fetch` FTS5 SQLite backend which retrieves the deterministic match. A compromised standard internal access role fundamentally cannot dump the database due to strict temporal generation limitations spanning \textit{only} generation delays.
+\end{itemize}
+
+\section{API Design and Permission Model}
+The API implements Dependency Injected Header authentication (\texttt{X-User-Role}).
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{8cm}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Role Required} & \textbf{Purpose} \\ \midrule
+\texttt{POST /query} & \texttt{user} & Executes standardized retrieval operations. \\
+\texttt{POST /query/debug} & \texttt{evaluator} & Output diagnostics, latencies, and metadata. \\
+\texttt{POST /evaluate} & \texttt{evaluator} & Batch processing evaluating RAG SLA KPIs. \\
+\texttt{GET /retrieval/logs} & \texttt{admin} & Ring-buffered tracking of all embeddings. \\
+\texttt{POST /kb/token} & \texttt{system} & Strict internal minting. \\
+\texttt{POST /kb/fetch} & \texttt{system + token} & Secure payload transit mapping. \\
+\texttt{GET /health} & None & Public load-balancer availability testing. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Limitations and Trade-offs}
+\begin{itemize}
+    \item \textbf{In-Memory Volatility:} For rapid local deployment and testability without requiring Docker Compose constraints, the application `/retrieval/logs` operates over an internal `deque` memory structure. Production deployments mandate explicit integration into Redis or explicit persistent indexing layers such as ELK or LangSmith.
+    \item \textbf{Database Concurrency:} Utilizing SQLite guarantees immediate cross-platform boot validation and execution zero-dependency loading. However, native multi-writer scale applications require refactoring the connection into PostgreSQL configurations.
+\end{itemize}
+
+\section{Dataset Description}
+The exact datasets shipped to achieve the BRD logic structure encompass 15 rigorously extracted primary-source Indian Banking schemes mapped across MSME expansion, Insurance structures, and Deposit parameters.
+
+We have included the schema logic natively within the repository at `data/banking_schemes.json`. The pipeline natively detects alterations to this schema file on application startup, running idempotently to rebuild vector mappings on fresh boots cleanly.
+
+\end{document}
