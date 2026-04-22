@@ -129,6 +129,19 @@ The API implements Dependency Injected Header authentication (\texttt{X-User-Rol
 \end{tabular}
 \end{table}
 
+\section{Evaluating the Live Pipeline}
+To ensure transparent compliance and ease of evaluation against the live vector stores, the system ships with multiple out-of-the-box testing capabilities active on port \texttt{8000}:
+\begin{itemize}
+    \item \textbf{Option 1: Graphical Interface (Swagger UI):} Navigating to \texttt{http://localhost:8000/docs} exposes interactive representations of the API layer. Evaluators can utilize the \texttt{Try it out} utility under \texttt{POST /query}, enter \texttt{user} into the \texttt{X-User-Role} parameter, and pass questions natively to evaluate grounding accuracy instantly.
+    \item \textbf{Option 2: Terminal Assessment:} The system perfectly binds to headless \texttt{cURL} execution testing workflows. Example payload extracting JSON sources:
+\end{itemize}
+\begin{lstlisting}[language=bash]
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -H "X-User-Role: user" \
+  -d '{"query": "What is the interest rate for PM Mudra Yojana?"}' | jq
+\end{lstlisting}
+
 \section{Limitations and Trade-offs}
 \begin{itemize}
     \item \textbf{In-Memory Volatility:} For rapid local deployment and testability without requiring Docker Compose constraints, the application `/retrieval/logs` operates over an internal `deque` memory structure. Production deployments mandate explicit integration into Redis or explicit persistent indexing layers such as ELK or LangSmith.

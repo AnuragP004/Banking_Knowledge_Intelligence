@@ -44,27 +44,29 @@ uvicorn app.main:app --reload --port 8000
 
 ### Test the system
 
-```bash
-# Health check
-curl http://localhost:8000/health
+There are two primary ways to test the live pipeline once the server is running on port 8000:
 
-# Query (as user)
+#### Option 1: Visual Assessment (Swagger UI)
+1. Open a web browser and navigate to `http://localhost:8000/docs`.
+2. Expand the **POST /query** endpoint and click **"Try it out"**.
+3. Set the `X-User-Role` header parameter to `user`.
+4. Enter standard queries into the Request Body (e.g., `{"query": "Who is eligible for PM Mudra?"}`) and hit **Execute**.
+
+#### Option 2: Headless Assessment (cURL)
+You can directly blast endpoints in your terminal. For readability, pipe the output to `jq`:
+
+```bash
+# General query testing
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -H "X-User-Role: user" \
-  -d '{"query": "What is PM Mudra Yojana eligibility?"}'
+  -d '{"query": "What is PM Mudra Yojana eligibility?"}' | jq
 
-# Debug trace (as evaluator)
-curl -X POST http://localhost:8000/query/debug \
-  -H "Content-Type: application/json" \
-  -H "X-User-Role: evaluator" \
-  -d '{"query": "Gold investment options"}'
-
-# Evaluation (as evaluator)
+# Evaluator testing endpoint checking metrics across a batch
 curl -X POST http://localhost:8000/evaluate \
   -H "Content-Type: application/json" \
   -H "X-User-Role: evaluator" \
-  -d '{"test_queries": ["PM Mudra Yojana", "pension scheme", "gold bonds"]}'
+  -d '{"test_queries": ["PM Mudra Yojana", "pension scheme", "gold bonds"]}' | jq
 ```
 
 ---
