@@ -71,10 +71,18 @@ The system embraces a multi-stage architecture enforcing strict semantic groundi
 +-------------------------------------------------------------------------+
 \end{verbatim}
 
+\section{Data Ingestion Layer}
+Pursuant to system requirements, the ingestion service (`ingestion\_service.py`) handles conversion of both structured and unstructured domains natively.
+\begin{itemize}
+    \item \textbf{Supported Formats:} The ingestion parser is modularly built to execute loaders across \textbf{JSON, CSV, PDF, DOCX, and HTML} datasets.
+    \item \textbf{Data Preprocessing Approach:} The ingestion layer intercepts source schemas and refactors them into unified \texttt{Document} dataclasses. Tabular matrices (e.g., CSV or structured JSON arrays regarding interest rates and eligibility) are explicitly templated into descriptive prose (e.g., transforming ``Rate: 7.5\%'' to ``Interest rate is 7.5\% per annum'') because semantic embedding operations are trained on contiguous text variations, not rigid column breaks.
+    \item \textbf{Handling Noisy/Inconsistent Data:} Banking outputs naturally carry OCR degradation, unformatted headers/footers, and irregular whitespace mappings. The ingestion engine utilizes localized regex normalization pipelines that collapse contiguous whitespace, filter repetitive disclaimer string templates, and normalize inconsistent governmental Unicode characters natively during the \texttt{Document} instantiation phase.
+    \item \textbf{Format Justification:} JSON serves as the primary declarative format for scheme data due to its native structural hierarchy perfectly mirroring scheme properties. Non-structured policies execute through PDF/DOCX endpoints natively leveraging localized parsers to avoid proprietary remote data lock-in.
+\end{itemize}
+
 \section{Data Flow Explanation}
 The data flow strictly enforces that all LLM interactions are contextualized against dynamically injected verified datasets.
 \begin{itemize}
-    \item \textbf{Ingestion:} Source definitions originate from JSON or tabular (CSV) schemas. The system parses and converts tabular matrices natively into descriptive prose (e.g., converting "Rate: 7.5\%" to "Interest rate is 7.5\% per annum") to prevent performance degradation with dense-retriever models.
     \item \textbf{Query-Time:} A user's query is vectorized. A broad vector fetch pulls the Top-10 overlapping chunks. 
     \item \textbf{Reranking:} Heavy-lifting cross-encoder models process the passages contiguously against the query and distill to an exact Top-3.
     \item \textbf{Generation:} Context is injected along with `<source id="X">` XML mapping logic. The LLM executes a Single-Pass Structured evaluation.
